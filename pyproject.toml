@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resios_request"
+version = "1.0.0"
+description = "Mi librería personal en Python"
+readme = "README.md"
+requires-python = ">=3.12"
+
+authors = [
+  { github = "RiverAndres"}
+]
+
+license = { text = "MIT" }
+
+dependencies = [
+  "requests>=2.32.3",
+  "pandas>=2.2.3"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

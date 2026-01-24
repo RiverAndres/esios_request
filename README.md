@@ -24,5 +24,5 @@ esios_get_archive(
 ## Instalación
 
 ```bash
-pip install git+https://github.com/tuusuario/milib.git
+pip install git+https://github.com/RiverAndres/esios_request.git
 ```

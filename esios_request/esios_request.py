@@ -110,8 +110,7 @@ def esios_get_archive(
     res = esios_get_request(token = token, url = endpoint, headers = headers, params = params)
     res.raise_for_status()
     try:
-        df = pd.DataFrame(res.json()["indicator"]["values"]).set_index("datetime_utc")
-        df.index = pd.to_datetime(df.index)
+        df = pd.DataFrame(next(iter(res.json().values())))
     except:
         df = pd.DataFrame()
 

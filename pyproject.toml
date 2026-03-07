@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "esios_request"
-version = "1.0.1"
+version = "1.0.2"
 description = "Mi librería personal en Python"
 readme = "README.md"
 requires-python = ">=3.12"

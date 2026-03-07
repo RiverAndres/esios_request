@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "esios_request"
 version = "1.0.2"
-description = "Mi librería personal en Python"
+description = "Module to facilitate GET requests to the ESIOS public API."
 readme = "README.md"
 requires-python = ">=3.12"
 

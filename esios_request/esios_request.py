@@ -27,7 +27,6 @@ def esios_get_request(
     headers["x-api-key"] = token
     
     response = session.get(url = url, headers = headers, params = params, timeout = (5, 180))
-    print(dir(response))
     return response
 
 def esios_get_indicator(
@@ -67,7 +66,7 @@ def esios_get_indicator(
     df = pd.DataFrame()
 
     while start_interval_date < end_date:
-        end_interval_date = start_interval_date + relativedelta(years = 1)
+        end_interval_date = start_interval_date + relativedelta(months = 6)
         if end_interval_date > end_date:
             end_interval_date = end_date
 

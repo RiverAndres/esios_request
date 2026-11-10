@@ -89,17 +89,18 @@ Goal: a long download must not fail because of a one-off error.
 
 Goal: a scalable base without breaking the current API.
 
-- [ ] `EsiosClient` class with a reusable session, retries and token configured once; supports `with`.
+- [x] `EsiosClient` class with a reusable session, retries and token configured once; supports `with`.
   - `client.indicator(id, start, end, **params) -> pd.DataFrame`
   - `client.indicators([ids], start, end, wide=False) -> pd.DataFrame`
   - `client.archive(id, **params) -> pd.DataFrame`
   - `client.indicator_info(id) -> pd.DataFrame` (metadata with `values=false`: name, unit, geos, `step_type`…)
   - `client.search(text) -> pd.DataFrame` (`GET /indicators?text=`: id, name, short_name)
-- [ ] `esios_get_indicator` / `esios_get_archive` remain as thin wrappers around the client (backward compatibility).
-- [ ] Parallel block download with `ThreadPoolExecutor` (configurable `max_workers`, 4 by default) and configurable block size.
-- [ ] Alias catalogue as an `Enum`/dataclass (id, unit, description) and a clear error if the alias does not exist.
+- [x] `esios_get_indicator` / `esios_get_archive` remain as thin wrappers around the client (backward compatibility).
+- [x] Parallel block download with `ThreadPoolExecutor` (configurable `max_workers`, 4 by default) and configurable block size (`block_months`, 6 by default).
+- [x] Alias catalogue as frozen dataclasses (alias, id, unit, description) + `indicator_catalogue()` / `archive_catalogue()`; unknown alias → `EsiosUnknownAlias` (also `KeyError`) with suggestions.
 
 **Done when:** downloading a year of `p_pmd` is clearly faster than in v1.0.3 and old code keeps working unchanged.
+✅ Completed 2026-11-10: 144 tests pass (49 new in `tests/test_phase3.py`; the existing ones run unchanged apart from order-independent assertions now that blocks run in parallel), ruff and mypy clean. Real API, one year of `p_pmd` (Spain, 35 040 rows, identical results): sequential 6-month blocks (≈ v1.0.3) 16.5 s → parallel 6-month 10.7 s → parallel 3-month 3.7 s; no 429 with 4 parallel requests.
 
 ---
 
@@ -121,3 +122,4 @@ Goal: do not repeat downloads and do not serve stale data.
 - Local Parquet store with incremental download (the output is still a DataFrame).
 - CI on GitHub Actions (ruff, mypy, pytest) and publishing to PyPI.
 - Async client (`httpx`).
+- Reconsider the default `block_months` (6 → 3): ~3x faster per download but twice the requests. Kept at 6 for now to limit the number of requests (author's decision, 2026-11-10).

@@ -28,7 +28,9 @@ from .conftest import (
     indicator_url,
     make_indicator_payload,
     make_value,
+    payload_by_start,
     query_params,
+    sent_blocks,
 )
 
 ONE_HOUR = {"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/01/01T01:00:00Z"}
@@ -82,7 +84,7 @@ def test_long_range_is_split_into_6_month_blocks_aligned_to_madrid(mocked, token
         token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2026/03/01T00:00:00Z"}
     )
 
-    blocks = [(query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls]
+    blocks = sent_blocks(mocked)
     # Boundaries = July 1st and January 1st at 00:00 Madrid time (22:00Z in summer, 23:00Z in winter).
     # Each block ends 1 s before the boundary: end_date is inclusive, so blocks do not overlap.
     assert blocks == [
@@ -99,11 +101,7 @@ def test_consecutive_blocks_have_no_gaps_or_overlaps(mocked, token):
         token, 600, params={"start_date": "2020/03/15T10:30:00Z", "end_date": "2024/11/20T05:00:00Z"}
     )
 
-    blocks = [
-        (datetime.strptime(query_params(c.request)["start_date"], FMT),
-         datetime.strptime(query_params(c.request)["end_date"], FMT))
-        for c in mocked.calls
-    ]
+    blocks = [(datetime.strptime(s, FMT), datetime.strptime(e, FMT)) for s, e in sent_blocks(mocked)]
     assert blocks[0][0] == datetime(2020, 3, 15, 10, 30)
     assert blocks[-1][1] == datetime(2024, 11, 20, 5)
     for (_, end), (next_start, _) in pairwise(blocks):
@@ -138,7 +136,7 @@ def test_time_trunc_year_uses_yearly_blocks(mocked, token):
         params={"start_date": "2022/12/31T23:00:00Z", "end_date": "2025/12/31T22:59:59Z", "time_trunc": "year"},
     )
 
-    blocks = [(query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls]
+    blocks = sent_blocks(mocked)
     assert blocks == [
         ("2022/12/31T23:00:00Z", "2023/12/31T22:59:59Z"),
         ("2023/12/31T23:00:00Z", "2024/12/31T22:59:59Z"),
@@ -173,10 +171,10 @@ def test_dedupes_if_the_api_repeats_an_instant_between_blocks(mocked, token):
     # Safety net: even though blocks do not overlap, if the API returned the same instant
     # in two blocks it must not appear twice.
     repeated = make_value(datetime(2025, 6, 30, 22), 1.0)
-    first = make_indicator_payload(600, [make_value(datetime(2025, 1, 1), 0.0), repeated])
-    second = make_indicator_payload(600, [repeated, make_value(datetime(2025, 9, 1), 2.0)])
-    mocked.add("GET", indicator_url(600), json=first)
-    mocked.add("GET", indicator_url(600), json=second)
+    mocked.add_callback("GET", indicator_url(600), callback=payload_by_start(600, {
+        "2025/01/01T00:00:00Z": [make_value(datetime(2025, 1, 1), 0.0), repeated],
+        "2025/06/30T22:00:00Z": [repeated, make_value(datetime(2025, 9, 1), 2.0)],
+    }))
 
     df = esios_get_indicator(
         token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/09/01T00:00:00Z"}
@@ -321,8 +319,10 @@ def test_geo_agg_rows_with_geo_ids_instead_of_geo_id(mocked, token):
         iso = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         return {"value": value, "datetime": iso, "datetime_utc": iso, "tz_time": iso, "geo_ids": [1, 2, 3]}
 
-    mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, [row(datetime(2025, 1, 1), 1.0)]))
-    mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, [row(datetime(2025, 9, 1), 2.0)]))
+    mocked.add_callback("GET", indicator_url(600), callback=payload_by_start(600, {
+        "2025/01/01T00:00:00Z": [row(datetime(2025, 1, 1), 1.0)],
+        "2025/06/30T22:00:00Z": [row(datetime(2025, 9, 1), 2.0)],
+    }))
 
     df = esios_get_indicator(
         token, 600,

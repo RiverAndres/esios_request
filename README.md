@@ -19,6 +19,31 @@ pip install -e ".[dev]"
 ## Quick start
 
 ```python
+from esios_request import EsiosClient
+
+# The token can be passed as EsiosClient(token) or set in the ESIOS_API_KEY environment variable.
+with EsiosClient() as client:
+    # One indicator (alias or numeric id); dates without time zone are Madrid time
+    df = client.indicator("p_pmd", "2025-01-01", "2025-12-31T23:45", geo_ids=[3])
+
+    # Daily averages
+    daily = client.indicator(600, "2025-01-01", "2025-12-31", time_trunc="day", time_agg="average")
+
+    # Several indicators: long format, or one column per (indicator, geo_id)
+    long = client.indicators(["p_pmd", "e_pmd"], "2025-01-01", "2025-01-02")
+    wide = client.indicators(["p_pmd", "e_pmd"], "2025-01-01", "2025-01-02", wide=True)
+
+    # Metadata and search (no values)
+    info = client.indicator_info(["p_pmd", "e_pmd"])   # name, unit, granularity, geos, description…
+    found = client.search("precio marginal")            # id, name, short_name, description
+
+    # Archive
+    df_uf = client.archive("uf")
+```
+
+The functions of previous versions keep working unchanged (they use `EsiosClient` internally):
+
+```python
 from datetime import date
 
 from esios_request import esios_get_indicator, esios_get_archive
@@ -43,6 +68,44 @@ df = esios_get_indicator(id="p_pmd", params={"start_date": date(2025, 1, 1), "en
 # Archive
 df_uf = esios_get_archive(token, "uf")  # same as 110
 ```
+
+## EsiosClient
+
+```python
+EsiosClient(
+    token: str | None = None,     # None -> ESIOS_API_KEY environment variable
+    *,
+    use_cache: bool = False,      # store responses for 24 h with requests-cache
+    headers: dict | None = None,  # Accept, Content-Type and User-Agent by default
+    max_workers: int = 4,         # blocks downloaded in parallel (1 = sequential)
+    block_months: int = 6,        # maximum months per request block
+    session: requests.Session | None = None,  # use your own session as-is
+)
+```
+
+| Method | Returns (always a `pandas.DataFrame`) |
+|---|---|
+| `indicator(id, start, end, *, geo_ids=None, params=None, **api_params)` | Values indexed by `datetime_utc`, one row per instant and `geo_id` |
+| `indicators(ids, start, end, wide=False, ...)` | Long format with an `indicator` column, or `wide=True`: one column per (`indicator`, `geo_id`) |
+| `indicator_info(id_or_ids)` | Metadata indexed by `id`: name, short_name, unit, granularity, universe, geos, composited, disaggregated, values_updated_at, description |
+| `search(text=None)` | Indicators whose name matches `text` (all of them without `text`), indexed by `id` |
+| `archive(id, *, params=None, **api_params)` | Archive rows (`download_json`) |
+
+- `**api_params` are sent to the API as-is (`time_trunc="day"`, `time_agg="average"`, `geo_agg="sum"`, `locale="en"`…); `geo_ids=[3]` is sent as `geo_ids[]`. Dates go in `start`/`end`, not inside `params`.
+- Blocks (and the indicators of `indicators()`) are downloaded in parallel with `max_workers` threads; the result is the same as downloading them sequentially. Smaller blocks are noticeably faster per request (one year of `p_pmd`: ~11 s with 6-month blocks, ~4 s with `block_months=3`), at the cost of more requests.
+- With `wide=True`, rows aggregated with `geo_agg` (no `geo_id`) get `geo_id` = `<NA>`.
+- Use the client as a context manager (`with EsiosClient() as client:`) or call `client.close()` to release the connections.
+
+## Aliases
+
+```python
+from esios_request import indicator_catalogue, archive_catalogue
+
+indicator_catalogue()   # alias, id, unit, description
+archive_catalogue()     # alias, id, description
+```
+
+An unknown alias raises `EsiosUnknownAlias` (also a `KeyError`) with suggestions, e.g. `Unknown indicator alias 'p_pmdd'. Did you mean: p_pmd?`. Numeric ids (`600` or `"600"`) are always accepted.
 
 ## Functions
 
@@ -100,7 +163,8 @@ Transient errors (429 and 500/502/503/504) and connection failures are **retried
 | `EsiosRateLimited` | 429 after retries are exhausted | `EsiosHTTPError` |
 | `EsiosHTTPError` | any other HTTP error | `requests.HTTPError` |
 | `EsiosSchemaError` | the API returns an unexpected format | `ValueError` |
-| `EsiosConfigError` | missing token or dates, invalid dates | `ValueError` |
+| `EsiosUnknownAlias` | alias not in the catalogue | `EsiosConfigError`, `KeyError` |
+| `EsiosConfigError` | missing token or dates, invalid dates or settings | `ValueError` |
 
 All of them inherit from `EsiosError`. Code that caught `requests.HTTPError` or `ValueError` (v1.1) keeps working.
 
@@ -113,8 +177,6 @@ import logging
 logging.basicConfig(level=logging.INFO)                     # one summary per call
 logging.getLogger("esios_request").setLevel(logging.DEBUG)  # one line per block
 ```
-
-The list of available aliases is in `esios_request/indicators.py`.
 
 ## Version
 

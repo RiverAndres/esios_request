@@ -104,3 +104,21 @@ def daily_trunc_callback(indicator_id: int):
         return 200, {}, json.dumps(make_indicator_payload(indicator_id, daily_average(start, end)))
 
     return _cb
+
+
+def sent_blocks(mocked) -> list[tuple[str, str]]:
+    """(start_date, end_date) of every intercepted request, sorted (blocks may run in parallel)."""
+    return sorted((query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls)
+
+
+def payload_by_start(indicator_id: int, values_by_start: dict[str, list[dict]]):
+    """
+    Callback returning ``values_by_start[start_date]`` for each request. Order-independent, so it
+    is safe with blocks downloaded in parallel.
+    """
+
+    def _cb(request):
+        values = values_by_start[query_params(request)["start_date"]]
+        return 200, {}, json.dumps(make_indicator_payload(indicator_id, values))
+
+    return _cb

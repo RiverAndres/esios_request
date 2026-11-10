@@ -5,6 +5,7 @@ Hierarchy (all inherit from ``EsiosError``)::
 
     EsiosError
     ├── EsiosConfigError (ValueError)       missing token, invalid dates…
+    │   └── EsiosUnknownAlias (KeyError)    alias not in the catalogue
     ├── EsiosSchemaError (ValueError)       the API returned an unexpected format
     └── EsiosHTTPError (requests.HTTPError) HTTP error response
         ├── EsiosAuthError                  401 / 403
@@ -24,6 +25,13 @@ class EsiosError(Exception):
 
 class EsiosConfigError(EsiosError, ValueError):
     """Invalid or incomplete input parameters (token, dates…)."""
+
+
+class EsiosUnknownAlias(EsiosConfigError, KeyError):
+    """The indicator/archive alias is not in the catalogue. Also a ``KeyError`` for compatibility."""
+
+    def __str__(self) -> str:  # KeyError would wrap the message in quotes
+        return str(self.args[0]) if self.args else ""
 
 
 class EsiosSchemaError(EsiosError, ValueError):

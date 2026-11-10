@@ -1,7 +1,7 @@
 """
-Utilidades compartidas por los tests.
+Shared test utilities.
 
-Ningún test llama a la API real: todas las peticiones se interceptan con ``responses``.
+No test calls the real API: every request is intercepted with ``responses``.
 """
 
 import json
@@ -14,7 +14,7 @@ import responses
 
 BASE_URL = "https://api.esios.ree.es"
 FMT = "%Y/%m/%dT%H:%M:%SZ"
-FAKE_TOKEN = "token-de-prueba"
+FAKE_TOKEN = "test-token"
 
 
 def indicator_url(indicator_id: int) -> str:
@@ -26,7 +26,7 @@ def archive_url(archive_id: int) -> str:
 
 
 def query_params(request) -> dict[str, str]:
-    """Parámetros de la query de una petición interceptada, como dict simple."""
+    """Query parameters of an intercepted request, as a plain dict."""
     return {k: v[0] for k, v in parse_qs(urlparse(request.url).query).items()}
 
 
@@ -48,8 +48,8 @@ def make_indicator_payload(indicator_id: int, values: list[dict]) -> dict:
 
 def boundary_callback(indicator_id: int, geos: list[tuple[int, str]] | None = None):
     """
-    Callback que imita a la API: devuelve un valor en ``start_date`` y otro en ``end_date``
-    (``end_date`` es inclusivo), uno por cada geo indicado.
+    Callback that mimics the API: returns one value at ``start_date`` and another at ``end_date``
+    (``end_date`` is inclusive), one per given geo.
     """
     geos = geos or [(3, "España")]
 
@@ -74,17 +74,17 @@ def token() -> str:
 
 @pytest.fixture
 def mocked():
-    """Activa ``responses``: cualquier petición no registrada falla."""
+    """Enable ``responses``: any unregistered request fails."""
     with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
         yield rsps
 
 
 def daily_average(start: datetime, end: datetime) -> list[dict]:
     """
-    Imita ``time_trunc=day`` + ``time_agg=average`` de la API real: promedia una serie horaria
-    determinista **solo dentro de [start, end]**, agrupando por día de Madrid. Si el rango corta
-    un día por la mitad, ese día sale con un promedio parcial (comprobado contra la API real
-    el 2026-11-10 con el indicador 600: 01/07/2025 completo = 111,2; cortado a 00:00Z = 123,3).
+    Mimics the real API's ``time_trunc=day`` + ``time_agg=average``: averages a deterministic hourly
+    series **only within [start, end]**, grouped by Madrid day. If the range cuts a day in half,
+    that day comes back with a partial average (verified against the real API on 2026-11-10 with
+    indicator 600: full 2025-07-01 = 111.2; cut at 00:00Z = 123.3).
     """
     hours = pd.date_range(start, end, freq="h", tz="UTC")
     series = pd.Series(hours.hour + hours.day / 100, index=hours, dtype=float)

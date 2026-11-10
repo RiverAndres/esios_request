@@ -4,29 +4,32 @@ Easily obtain data published by REE in its public ESIOS API as a `pandas.DataFra
 
 This module was created mainly to obtain time series; there are features and endpoints that are not included in this version. They will be added as needed.
 
-## Instalación
+## Installation
 
 ```bash
 pip install git+https://github.com/RiverAndres/esios_request.git
 ```
 
-Para desarrollo (tests, linters):
+For development (tests, linters):
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## Uso rápido
+## Quick start
 
 ```python
+from datetime import date
+
 from esios_request import esios_get_indicator, esios_get_archive
 
-token = "TU_ESIOS_API_KEY"
+# The token can be passed as an argument or set in the ESIOS_API_KEY environment variable.
+token = "YOUR_ESIOS_API_KEY"
 
-# Indicador por alias (str) o por id numérico (int)
+# Indicator by alias (str) or numeric id (int)
 df = esios_get_indicator(
     token,
-    "p_pmd",  # equivalente a 600
+    "p_pmd",  # same as 600
     params={
         "start_date": "2025/01/01T00:00:00Z",
         "end_date": "2025/01/01T01:00:00Z",
@@ -34,48 +37,86 @@ df = esios_get_indicator(
     use_cache=True,
 )
 
-# Archivo
-df_uf = esios_get_archive(token, "uf")  # equivalente a 110
+# With ESIOS_API_KEY set and dates as date objects (Madrid time)
+df = esios_get_indicator(id="p_pmd", params={"start_date": date(2025, 1, 1), "end_date": date(2025, 1, 2)})
+
+# Archive
+df_uf = esios_get_archive(token, "uf")  # same as 110
 ```
 
-## Funciones
+## Functions
 
 ```python
 esios_get_indicator(
-    token: str,
-    id: str | int,          # alias (p.ej. "p_pmd") o id numérico (600)
-    params: dict,           # debe incluir "start_date" y "end_date" en formato "%Y/%m/%dT%H:%M:%SZ"
-    headers: dict | None = None,  # por defecto Accept, Content-Type y User-Agent
+    token: str | None = None,     # None -> ESIOS_API_KEY environment variable
+    id: str | int,                # required: alias (e.g. "p_pmd") or numeric id (600)
+    params: dict,                 # must include "start_date" and "end_date"
+    headers: dict | None = None,  # Accept, Content-Type and User-Agent by default
     use_cache: bool = False,
 ) -> pd.DataFrame
 
 esios_get_archive(
-    token: str,
-    id: str | int,          # alias (p.ej. "uf") o id numérico (110)
+    token: str | None = None,
+    id: str | int,                # required: alias (e.g. "uf") or numeric id (110)
     params: dict | None = None,
     headers: dict | None = None,
     use_cache: bool = False,
 ) -> pd.DataFrame
 ```
 
-- `esios_get_indicator` admite intervalos de cualquier tamaño: los trocea en bloques de hasta 6 meses (12 con `time_trunc="year"`) que no se solapan y que empiezan a principio de mes (o de año) en **hora de Madrid**, y concatena el resultado. Así, con `time_trunc` (`day`, `month`…) ningún periodo queda partido entre dos peticiones y los agregados salen completos. El índice es `datetime_utc` (UTC). `end_date` es inclusivo.
-- `time_agg`/`geo_agg` **sin** `time_trunc` agregan dentro de cada bloque: en rangos largos obtendrás una fila por bloque, no una sola para todo el rango.
-- Si un indicador tiene varias geografías (p.ej. `p_pmd`: España, Portugal, Francia…), hay **una fila por instante y `geo_id`**, así que el índice puede repetirse. Para pedir solo ciertas zonas puedes usar el filtro de la propia API, que descarga menos datos (no todos los indicadores lo admiten; si no tiene efecto, filtra después con `df[df["geo_id"] == 3]`):
+### Dates
+
+`start_date` and `end_date` accept:
+
+- `str`: the legacy format `"2025/01/01T00:00:00Z"` or any ISO 8601 string (`"2025-01-01"`, `"2025-01-01T00:00:00+01:00"`…).
+- `datetime`, `date` or `pd.Timestamp`.
+
+Dates **without a time zone** are interpreted in **Madrid time** (the same time zone the API uses to group days and months): `date(2025, 1, 1)` is 2024-12-31 23:00 UTC. To mean UTC, include the zone (`"...Z"`, `tzinfo=UTC`). A time that is ambiguous or does not exist because of a DST change raises `EsiosConfigError`. `end_date` is inclusive and must be equal to or later than `start_date`.
+
+### Result
+
+- `esios_get_indicator` handles ranges of any size: it splits them into non-overlapping blocks of up to 6 months (12 with `time_trunc="year"`) that start at the beginning of a month (or year) in **Madrid time**, and concatenates the result. This way, with `time_trunc` (`day`, `month`…) no period is split between two requests and aggregates are complete. The index is `datetime_utc` (`datetime64[ns, UTC]`), `value` is `float64` and `geo_id` is `Int64`.
+- `time_agg`/`geo_agg` **without** `time_trunc` aggregate within each block: for long ranges you get one row per block, not a single row for the whole range.
+- If an indicator has several geographies (e.g. `p_pmd`: Spain, Portugal, France…), there is **one row per instant and `geo_id`**, so the index may repeat. To request only some zones you can use the API's own filter, which downloads less data (not every indicator supports it; if it has no effect, filter afterwards with `df[df["geo_id"] == 3]`):
 
   ```python
-  params = {"start_date": "...", "end_date": "...", "geo_ids[]": [3]}  # 3 = España
+  params = {"start_date": "...", "end_date": "...", "geo_ids[]": [3]}  # 3 = Spain
   ```
 
-  Cualquier otro parámetro de la API (`time_trunc`, `geo_agg`…) se reenvía igual en cada bloque.
-- Si no hay datos en el rango, devuelve un `DataFrame` vacío con las mismas columnas.
-- Los diccionarios `params` y `headers` que pases **no se modifican**.
-- `esios_get_archive` acepta las dos formas de respuesta de `download_json`: una lista plana de filas o un objeto cuya primera clave contiene las filas.
-- Errores: un fallo HTTP lanza `requests.HTTPError`; una respuesta con formato inesperado o sin `start_date`/`end_date` lanza `ValueError`.
-- `use_cache=True` guarda las respuestas durante 24 h con `requests-cache`, evitando repetir peticiones idénticas.
+  Any other API parameter (`time_trunc`, `geo_agg`…) is forwarded unchanged in every block.
+- If there is no data in the range, an empty `DataFrame` with the same columns is returned.
+- The `params` and `headers` dicts you pass are **never modified**.
+- `esios_get_archive` accepts both `download_json` response shapes: a flat list of rows or an object whose first key holds the rows.
+- `use_cache=True` stores responses for 24 h with `requests-cache`, avoiding identical repeated requests.
 
-La lista de alias disponibles está en `esios_request/indicators.py`.
+### Errors and retries
 
-## Versión
+Transient errors (429 and 500/502/503/504) and connection failures are **retried** up to 5 times with exponential backoff, honouring the `Retry-After` header. If they persist, or on other errors, one of these exceptions is raised (all available from `esios_request`):
+
+| Exception | When | Also inherits from |
+|---|---|---|
+| `EsiosAuthError` | 401 / 403 (invalid token) | `EsiosHTTPError` |
+| `EsiosNotFound` | 404 | `EsiosHTTPError` |
+| `EsiosRateLimited` | 429 after retries are exhausted | `EsiosHTTPError` |
+| `EsiosHTTPError` | any other HTTP error | `requests.HTTPError` |
+| `EsiosSchemaError` | the API returns an unexpected format | `ValueError` |
+| `EsiosConfigError` | missing token or dates, invalid dates | `ValueError` |
+
+All of them inherit from `EsiosError`. Code that caught `requests.HTTPError` or `ValueError` (v1.1) keeps working.
+
+### Logging
+
+The library prints nothing; it logs the requested blocks and their timings to the `esios_request` logger:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)                     # one summary per call
+logging.getLogger("esios_request").setLevel(logging.DEBUG)  # one line per block
+```
+
+The list of available aliases is in `esios_request/indicators.py`.
+
+## Version
 
 ```python
 import esios_request

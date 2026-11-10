@@ -1,8 +1,8 @@
 """
-Tests de ``esios_get_indicator``.
+Tests for ``esios_get_indicator``.
 
-Si se descubre un bug nuevo, añadir su test con ``xfail(strict=True)``: cuando se arregle,
-el test pasará (XPASS → error) y habrá que quitar el ``xfail``.
+If a new bug is found, add its test with ``xfail(strict=True)``: once it is fixed the test will
+pass (XPASS → error) and the ``xfail`` must be removed.
 """
 
 import copy
@@ -34,7 +34,7 @@ from .conftest import (
 ONE_HOUR = {"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/01/01T01:00:00Z"}
 
 
-def test_devuelve_dataframe_con_indice_utc(mocked, token):
+def test_returns_dataframe_with_utc_index(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     df = esios_get_indicator(token, 600, params=dict(ONE_HOUR))
@@ -47,7 +47,7 @@ def test_devuelve_dataframe_con_indice_utc(mocked, token):
     assert len(df) == 2
 
 
-def test_alias_y_id_numerico_piden_la_misma_url(mocked, token):
+def test_alias_and_numeric_id_request_the_same_url(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(token, "p_pmd", params=dict(ONE_HOUR))
@@ -57,7 +57,7 @@ def test_alias_y_id_numerico_piden_la_misma_url(mocked, token):
     assert urls == {indicator_url(600)}
 
 
-def test_envia_token_y_fechas(mocked, token):
+def test_sends_token_and_dates(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(token, 600, params=dict(ONE_HOUR), headers={"Accept": "application/json"})
@@ -67,7 +67,7 @@ def test_envia_token_y_fechas(mocked, token):
     assert query_params(req) == ONE_HOUR
 
 
-def test_parametros_extra_se_reenvian(mocked, token):
+def test_extra_params_are_forwarded(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(token, 600, params={**ONE_HOUR, "time_trunc": "hour"})
@@ -75,62 +75,62 @@ def test_parametros_extra_se_reenvian(mocked, token):
     assert query_params(mocked.calls[0].request)["time_trunc"] == "hour"
 
 
-def test_rango_largo_se_trocea_en_bloques_de_6_meses_alineados_a_madrid(mocked, token):
+def test_long_range_is_split_into_6_month_blocks_aligned_to_madrid(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(
         token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2026/03/01T00:00:00Z"}
     )
 
-    bloques = [(query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls]
-    # Fronteras = 1 de julio y 1 de enero a las 00:00 de Madrid (22:00Z en verano, 23:00Z en invierno).
-    # Cada bloque acaba 1 s antes de la frontera: end_date es inclusivo y así no se solapan.
-    assert bloques == [
+    blocks = [(query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls]
+    # Boundaries = July 1st and January 1st at 00:00 Madrid time (22:00Z in summer, 23:00Z in winter).
+    # Each block ends 1 s before the boundary: end_date is inclusive, so blocks do not overlap.
+    assert blocks == [
         ("2025/01/01T00:00:00Z", "2025/06/30T21:59:59Z"),
         ("2025/06/30T22:00:00Z", "2025/12/31T22:59:59Z"),
         ("2025/12/31T23:00:00Z", "2026/03/01T00:00:00Z"),
     ]
 
 
-def test_bloques_consecutivos_sin_huecos_ni_solapes(mocked, token):
+def test_consecutive_blocks_have_no_gaps_or_overlaps(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(
         token, 600, params={"start_date": "2020/03/15T10:30:00Z", "end_date": "2024/11/20T05:00:00Z"}
     )
 
-    bloques = [
+    blocks = [
         (datetime.strptime(query_params(c.request)["start_date"], FMT),
          datetime.strptime(query_params(c.request)["end_date"], FMT))
         for c in mocked.calls
     ]
-    assert bloques[0][0] == datetime(2020, 3, 15, 10, 30)
-    assert bloques[-1][1] == datetime(2024, 11, 20, 5)
-    for (_, fin), (siguiente, _) in pairwise(bloques):
-        assert siguiente - fin == timedelta(seconds=1)
-        frontera = siguiente.replace(tzinfo=UTC).astimezone(ZoneInfo("Europe/Madrid"))
-        assert (frontera.day, frontera.hour, frontera.minute) == (1, 0, 0)
-    for inicio, fin in bloques:
-        assert inicio <= fin
-        assert fin - inicio <= timedelta(days=185)
+    assert blocks[0][0] == datetime(2020, 3, 15, 10, 30)
+    assert blocks[-1][1] == datetime(2024, 11, 20, 5)
+    for (_, end), (next_start, _) in pairwise(blocks):
+        assert next_start - end == timedelta(seconds=1)
+        boundary = next_start.replace(tzinfo=UTC).astimezone(ZoneInfo("Europe/Madrid"))
+        assert (boundary.day, boundary.hour, boundary.minute) == (1, 0, 0)
+    for start, end in blocks:
+        assert start <= end
+        assert end - start <= timedelta(days=185)
 
 
-def test_time_trunc_day_no_parte_dias_entre_bloques(mocked, token):
-    # Regresión: con bloques cortados a las 00:00Z, el día del corte llegaba con un promedio
-    # parcial y se quedaba ese valor (verificado contra la API real el 2026-11-10).
+def test_time_trunc_day_does_not_split_days_between_blocks(mocked, token):
+    # Regression: with blocks cut at 00:00Z, the day at the cut came back with a partial
+    # average and that value was kept (verified against the real API on 2026-11-10).
     mocked.add_callback("GET", indicator_url(600), callback=daily_trunc_callback(600))
-    rango = {"start_date": "2024/12/31T23:00:00Z", "end_date": "2026/02/28T22:59:59Z"}
+    date_range = {"start_date": "2024/12/31T23:00:00Z", "end_date": "2026/02/28T22:59:59Z"}
 
-    df = esios_get_indicator(token, 600, params={**rango, "time_trunc": "day", "time_agg": "average"})
+    df = esios_get_indicator(token, 600, params={**date_range, "time_trunc": "day", "time_agg": "average"})
 
-    esperado = pd.DataFrame(daily_average(datetime(2024, 12, 31, 23), datetime(2026, 2, 28, 22, 59, 59)))
-    esperado = esperado.set_index(pd.to_datetime(esperado["datetime_utc"], utc=True))["value"]
+    expected = pd.DataFrame(daily_average(datetime(2024, 12, 31, 23), datetime(2026, 2, 28, 22, 59, 59)))
+    expected = expected.set_index(pd.to_datetime(expected["datetime_utc"], utc=True))["value"]
     assert len(mocked.calls) == 3
     assert not df.index.duplicated().any()
-    pd.testing.assert_series_equal(df["value"], esperado, check_names=False, check_index_type=False)
+    pd.testing.assert_series_equal(df["value"], expected, check_names=False, check_index_type=False)
 
 
-def test_time_trunc_year_usa_bloques_anuales(mocked, token):
+def test_time_trunc_year_uses_yearly_blocks(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(
@@ -138,15 +138,15 @@ def test_time_trunc_year_usa_bloques_anuales(mocked, token):
         params={"start_date": "2022/12/31T23:00:00Z", "end_date": "2025/12/31T22:59:59Z", "time_trunc": "year"},
     )
 
-    bloques = [(query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls]
-    assert bloques == [
+    blocks = [(query_params(c.request)["start_date"], query_params(c.request)["end_date"]) for c in mocked.calls]
+    assert blocks == [
         ("2022/12/31T23:00:00Z", "2023/12/31T22:59:59Z"),
         ("2023/12/31T23:00:00Z", "2024/12/31T22:59:59Z"),
         ("2024/12/31T23:00:00Z", "2025/12/31T22:59:59Z"),
     ]
 
 
-def test_inicio_igual_a_fin_pide_un_bloque(mocked, token):
+def test_start_equal_to_end_requests_one_block(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     df = esios_get_indicator(
@@ -157,7 +157,7 @@ def test_inicio_igual_a_fin_pide_un_bloque(mocked, token):
     assert not df.empty
 
 
-def test_sin_duplicados_entre_bloques(mocked, token):
+def test_no_duplicates_between_blocks(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     df = esios_get_indicator(
@@ -165,18 +165,18 @@ def test_sin_duplicados_entre_bloques(mocked, token):
     )
 
     assert not df.index.duplicated().any()
-    assert len(df) == 6  # inicio y fin de cada uno de los 3 bloques
+    assert len(df) == 6  # start and end of each of the 3 blocks
     assert df.index.is_monotonic_increasing
 
 
-def test_deduplica_si_la_api_repite_un_instante_entre_bloques(mocked, token):
-    # Red de seguridad: aunque los bloques no se solapan, si la API devolviera el mismo
-    # instante en dos bloques no debe salir repetido.
-    repetido = make_value(datetime(2025, 6, 30, 22), 1.0)
-    primero = make_indicator_payload(600, [make_value(datetime(2025, 1, 1), 0.0), repetido])
-    segundo = make_indicator_payload(600, [repetido, make_value(datetime(2025, 9, 1), 2.0)])
-    mocked.add("GET", indicator_url(600), json=primero)
-    mocked.add("GET", indicator_url(600), json=segundo)
+def test_dedupes_if_the_api_repeats_an_instant_between_blocks(mocked, token):
+    # Safety net: even though blocks do not overlap, if the API returned the same instant
+    # in two blocks it must not appear twice.
+    repeated = make_value(datetime(2025, 6, 30, 22), 1.0)
+    first = make_indicator_payload(600, [make_value(datetime(2025, 1, 1), 0.0), repeated])
+    second = make_indicator_payload(600, [repeated, make_value(datetime(2025, 9, 1), 2.0)])
+    mocked.add("GET", indicator_url(600), json=first)
+    mocked.add("GET", indicator_url(600), json=second)
 
     df = esios_get_indicator(
         token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/09/01T00:00:00Z"}
@@ -186,14 +186,14 @@ def test_deduplica_si_la_api_repite_un_instante_entre_bloques(mocked, token):
     assert list(df["value"]) == [0.0, 1.0, 2.0]
 
 
-def test_error_http_se_propaga(mocked, token):
+def test_http_error_is_propagated(mocked, token):
     mocked.add("GET", indicator_url(600), status=401, json={"message": "unauthorized"})
 
     with pytest.raises(requests.HTTPError):
         esios_get_indicator(token, 600, params=dict(ONE_HOUR))
 
 
-def test_respuesta_sin_valores_devuelve_dataframe_vacio_con_columnas(mocked, token):
+def test_response_without_values_returns_empty_dataframe_with_columns(mocked, token):
     mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, []))
 
     df = esios_get_indicator(token, 600, params=dict(ONE_HOUR))
@@ -206,13 +206,13 @@ def test_respuesta_sin_valores_devuelve_dataframe_vacio_con_columnas(mocked, tok
     assert str(df.index.tz) == "UTC"
 
 
-# --------------------------------------------------------------------------- Fase 1 (antes bugs)
+# --------------------------------------------------------------------------- Phase 1 (former bugs)
 
 GEOS_600 = [(1, "Portugal"), (2, "Francia"), (3, "España")]
 LONG_RANGE = {"start_date": "2025/01/01T00:00:00Z", "end_date": "2026/03/01T00:00:00Z"}
 
 
-def test_varios_geos_por_timestamp_no_se_pierden(mocked, token):
+def test_several_geos_per_timestamp_are_not_lost(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600, GEOS_600))
 
     df = esios_get_indicator(token, 600, params=dict(ONE_HOUR))
@@ -221,18 +221,18 @@ def test_varios_geos_por_timestamp_no_se_pierden(mocked, token):
     assert len(df) == 2 * len(GEOS_600)
 
 
-def test_varios_geos_y_varios_bloques_sin_duplicados(mocked, token):
+def test_several_geos_and_several_blocks_without_duplicates(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600, GEOS_600))
 
     df = esios_get_indicator(token, 600, params=dict(LONG_RANGE))
 
-    claves = list(zip(df.index, df["geo_id"]))
-    assert len(claves) == len(set(claves))
-    assert len(df) == 6 * len(GEOS_600)  # 6 instantes distintos x 3 geos
+    keys = list(zip(df.index, df["geo_id"]))
+    assert len(keys) == len(set(keys))
+    assert len(df) == 6 * len(GEOS_600)  # 6 distinct instants x 3 geos
     assert df.groupby("geo_id").size().to_dict() == {1: 6, 2: 6, 3: 6}
 
 
-def test_params_del_usuario_no_se_modifican(mocked, token):
+def test_user_params_are_not_modified(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
     params = {**LONG_RANGE, "time_trunc": "hour"}
     original = copy.deepcopy(params)
@@ -243,7 +243,7 @@ def test_params_del_usuario_no_se_modifican(mocked, token):
     assert params == original
 
 
-def test_headers_del_usuario_no_se_modifican(mocked, token):
+def test_user_headers_are_not_modified(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
     headers = {"Accept": "application/json"}
 
@@ -254,7 +254,7 @@ def test_headers_del_usuario_no_se_modifican(mocked, token):
     assert mocked.calls[0].request.headers["x-api-key"] == token
 
 
-def test_headers_por_defecto_no_guardan_el_token(mocked, token):
+def test_default_headers_do_not_store_the_token(mocked, token):
     from esios_request.esios_request import DEFAULT_HEADERS
 
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
@@ -269,12 +269,12 @@ def test_headers_por_defecto_no_guardan_el_token(mocked, token):
 
 
 @pytest.mark.parametrize("func", [esios_get_indicator, esios_get_archive])
-def test_firmas_sin_defaults_mutables(func):
+def test_signatures_have_no_mutable_defaults(func):
     for p in inspect.signature(func).parameters.values():
         assert not isinstance(p.default, (dict, list, set)), p.name
 
 
-def test_esios_get_request_sin_sesion_por_defecto_ni_parametro_muerto():
+def test_esios_get_request_has_no_default_session_or_dead_parameter():
     sig = inspect.signature(esios_get_request)
     assert sig.parameters["session"].default is None
     assert "max_cache_entries" not in sig.parameters
@@ -282,16 +282,16 @@ def test_esios_get_request_sin_sesion_por_defecto_ni_parametro_muerto():
 
 @pytest.mark.parametrize(
     "payload",
-    [{"inesperado": True}, {"indicator": {}}, {"indicator": {"values": "x"}}, {"indicator": {"values": [{"value": 1}]}}],
+    [{"unexpected": True}, {"indicator": {}}, {"indicator": {"values": "x"}}, {"indicator": {"values": [{"value": 1}]}}],
 )
-def test_respuesta_mal_formada_lanza_error(mocked, token, payload):
+def test_malformed_response_raises_error(mocked, token, payload):
     mocked.add("GET", indicator_url(600), body=json.dumps(payload))
 
-    with pytest.raises(ValueError, match="Respuesta inesperada"):
+    with pytest.raises(ValueError, match="Unexpected response"):
         esios_get_indicator(token, 600, params=dict(ONE_HOUR))
 
 
-def test_respuesta_que_no_es_json_lanza_error(mocked, token):
+def test_non_json_response_raises_error(mocked, token):
     mocked.add("GET", indicator_url(600), body="<html>error</html>")
 
     with pytest.raises(ValueError):
@@ -299,12 +299,12 @@ def test_respuesta_que_no_es_json_lanza_error(mocked, token):
 
 
 @pytest.mark.parametrize("params", [{}, {"start_date": "2025/01/01T00:00:00Z"}, {"end_date": "2025/01/01T00:00:00Z"}])
-def test_faltan_fechas_lanza_error_claro(params, token):
-    with pytest.raises(ValueError, match="Faltan parámetros"):
+def test_missing_dates_raise_clear_error(params, token):
+    with pytest.raises(ValueError, match="Missing required parameters"):
         esios_get_indicator(token, 600, params=params)
 
 
-def test_filtro_geo_ids_se_reenvia_en_cada_bloque(mocked, token):
+def test_geo_ids_filter_is_forwarded_in_every_block(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(token, 600, params={**LONG_RANGE, "geo_ids[]": [3, 1]})
@@ -315,14 +315,14 @@ def test_filtro_geo_ids_se_reenvia_en_cada_bloque(mocked, token):
         assert qs["geo_ids[]"] == ["3", "1"]
 
 
-def test_geo_agg_filas_con_geo_ids_en_vez_de_geo_id(mocked, token):
-    # Con geo_agg la API devuelve "geo_ids" (lista) y no "geo_id"/"geo_name": una fila por instante.
-    def fila(dt, value):
+def test_geo_agg_rows_with_geo_ids_instead_of_geo_id(mocked, token):
+    # With geo_agg the API returns "geo_ids" (list) instead of "geo_id"/"geo_name": one row per instant.
+    def row(dt, value):
         iso = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         return {"value": value, "datetime": iso, "datetime_utc": iso, "tz_time": iso, "geo_ids": [1, 2, 3]}
 
-    mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, [fila(datetime(2025, 1, 1), 1.0)]))
-    mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, [fila(datetime(2025, 9, 1), 2.0)]))
+    mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, [row(datetime(2025, 1, 1), 1.0)]))
+    mocked.add("GET", indicator_url(600), json=make_indicator_payload(600, [row(datetime(2025, 9, 1), 2.0)]))
 
     df = esios_get_indicator(
         token, 600,

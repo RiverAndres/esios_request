@@ -5,29 +5,29 @@ __pycache__/
 build/
 dist/
 
-# Entornos virtuales y secretos
+# Virtual environments and secrets
 .venv/
 venv/
 env/
 .env
 .env.*
 
-# Tests / herramientas
+# Tests / tools
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
 
-# Caché de requests-cache
+# requests-cache cache
 *.sqlite
 
-# Varios
+# Misc
 .DS_Store
 *.log
 
-# Script local de pruebas
+# Local test script
 main.py
 
-# Ajustes locales de Claude Code (personales)
+# Local Claude Code settings (personal)
 .claude/settings.local.json

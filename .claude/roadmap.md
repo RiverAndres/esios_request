@@ -1,122 +1,123 @@
-# Roadmap a corto plazo — esios_request
+# Short-term roadmap — esios_request
 
-> Restricción fija: la salida pública de la librería es siempre un `pandas.DataFrame`.
-> Estado de partida: v1.0.3 (noviembre 2026). Bugs verificados contra la API real el 2026-11-09.
-
----
-
-## Fase 0 — Higiene del repositorio · v1.0.4
-
-Objetivo: dejar el repo limpio antes de tocar lógica.
-
-- [x] Sustituir el `.gitignore` (plantilla Next.js) por uno de Python (`__pycache__/`, `*.egg-info/`, `.venv/`, `env/`, `.pytest_cache/`, `*.sqlite`).
-- [x] Quitar del índice los `__pycache__/` versionados (`git rm -r --cached`).
-- [x] Declarar dependencias que faltan en `pyproject.toml`: `python-dateutil`. Añadir extras opcionales: `dev = [pytest, responses, ruff, mypy]`.
-- [x] Añadir `__version__` en `esios_request/__init__.py`.
-- [x] Actualizar el README: `use_cache`, `id` acepta `str | int`, ejemplo mínimo de uso.
-- [x] Infraestructura de tests: `tests/` con pytest + `responses` (nunca llama a la API real), config en `pyproject.toml` (`xfail_strict = true`).
-- [x] Tests del comportamiento actual (alias, URL, token, troceo en bloques de 6 meses, borde sin duplicados, errores HTTP, archivos).
-- [x] Bugs conocidos documentados como tests `xfail(strict=True)`: al arreglar uno, el test pasa a XPASS → falla, y hay que quitar el `xfail`.
-- [x] Regla de trabajo en `CLAUDE.md`: tras cualquier cambio de código, ejecutar la suite completa antes de dar el trabajo por terminado.
-
-**Hecho cuando:** `git status` limpio tras ejecutar, `pip install -e .[dev]` funciona en un venv nuevo y `pytest` pasa (18 passed, 4 xfailed).
+> Fixed constraint: the library's public output is always a `pandas.DataFrame`.
+> Starting point: v1.0.3 (November 2026). Bugs verified against the real API on 2026-11-09.
 
 ---
 
-## Fase 1 — Corrección de bugs críticos · v1.1.0
+## Phase 0 — Repository hygiene · v1.0.4
 
-Objetivo: que los datos devueltos sean correctos y la función no tenga efectos secundarios.
+Goal: leave the repo clean before touching any logic.
 
-- [x] **Pérdida de geos:** deduplicar por `(datetime_utc, geo_id)` en lugar de solo por índice. Hoy `p_pmd` devuelve únicamente Portugal.
-- [x] **Defaults mutables:** `headers=None` y `params=None` en las firmas; trabajar siempre sobre copias. El token no debe quedar guardado en el default de `headers`.
-- [x] No modificar el `params` que pasa el usuario (`params.update` → diccionario local por bloque).
-- [x] Eliminar `except:` desnudos: capturar solo `KeyError`/`ValueError` para respuestas vacías legítimas y lanzar un error claro en el resto.
-- [x] Eliminar el parámetro muerto `max_cache_entries` y el `session=requests.Session()` evaluado al importar.
-- [x] Construir la lista de DataFrames y hacer un único `pd.concat` al final.
+- [x] Replace the `.gitignore` (Next.js template) with a Python one (`__pycache__/`, `*.egg-info/`, `.venv/`, `env/`, `.pytest_cache/`, `*.sqlite`).
+- [x] Remove the versioned `__pycache__/` from the index (`git rm -r --cached`).
+- [x] Declare missing dependencies in `pyproject.toml`: `python-dateutil`. Add optional extras: `dev = [pytest, responses, ruff, mypy]`.
+- [x] Add `__version__` to `esios_request/__init__.py`.
+- [x] Update the README: `use_cache`, `id` accepts `str | int`, minimal usage example.
+- [x] Test infrastructure: `tests/` with pytest + `responses` (never calls the real API), config in `pyproject.toml` (`xfail_strict = true`).
+- [x] Tests for the current behaviour (aliases, URL, token, 6-month block splitting, no duplicates at the boundary, HTTP errors, archives).
+- [x] Known bugs documented as `xfail(strict=True)` tests: when one is fixed the test XPASSes → fails, and the `xfail` must be removed.
+- [x] Working rule in `CLAUDE.md`: after any code change, run the full suite before considering the work finished.
 
-**Tests mínimos (pytest + respuestas grabadas, sin llamar a la API):**
-- [x] Indicador con varios geos por timestamp → no se pierde ninguno.
-- [x] Rango que cruza varios bloques de 6 meses → sin duplicados en el borde (end_date es inclusivo).
-- [x] Llamar dos veces seguidas → `headers`/`params` del usuario y los defaults intactos.
-- [x] Respuesta mal formada → error claro en vez de DataFrame vacío.
-- [x] Respuesta con `values: []` → DataFrame vacío con las columnas esperadas.
-
-**Hecho cuando:** los tests pasan y `esios_get_indicator(token, "p_pmd", ...)` devuelve 6 geos para 2025-01-01.
-✅ Completada 2026-11-10: 39 tests pasan; comprobado contra la API real (1 h de `p_pmd` → 6 geos × 5 filas).
-Nota: los errores de formato lanzan `ValueError` de momento; en la Fase 2 pasarán a `EsiosSchemaError` (subclase de `ValueError` para no romper compatibilidad).
+**Done when:** `git status` is clean after running, `pip install -e .[dev]` works in a fresh venv and `pytest` passes (18 passed, 4 xfailed).
 
 ---
 
-## Fase 1.1 — Hallazgos de la documentación de la API · v1.1.1
+## Phase 1 — Critical bug fixes · v1.1.0
 
-Objetivo: corregir lo que la revisión de la documentación oficial (2026-11-10) destapó.
+Goal: correct returned data and no side effects.
 
-- [x] Verificar contra la API real si `time_trunc` parte periodos en las fronteras de bloque → **confirmado** (01/07/2025: 123,3 en vez de 111,2).
-- [x] Bloques **sin solapamiento** (cada uno acaba 1 s antes del siguiente) con fronteras en inicio de mes en hora de Madrid.
-- [x] Con `time_trunc=year`, bloques de 12 meses alineados al 1 de enero de Madrid (verificado: la API acepta un año en una petición).
-- [x] `esios_get_archive` acepta la respuesta de `download_json` como lista plana de filas (formato del ejemplo oficial).
-- [x] Declarar `tzdata` (necesario para `zoneinfo` en Windows).
+- [x] **Lost geos:** dedupe by `(datetime_utc, geo_id)` instead of by index only. `p_pmd` currently returns only Portugal.
+- [x] **Mutable defaults:** `headers=None` and `params=None` in the signatures; always work on copies. The token must not be stored in the `headers` default.
+- [x] Do not modify the user's `params` (`params.update` → local dict per block).
+- [x] Remove bare `except:`: catch only `KeyError`/`ValueError` for legitimate empty responses and raise a clear error otherwise.
+- [x] Remove the dead `max_cache_entries` parameter and the `session=requests.Session()` evaluated at import time.
+- [x] Build a list of DataFrames and do a single `pd.concat` at the end.
+
+**Minimum tests (pytest + recorded responses, no API calls):**
+- [x] Indicator with several geos per timestamp → none is lost.
+- [x] Range spanning several 6-month blocks → no duplicates at the boundary (end_date is inclusive).
+- [x] Calling twice in a row → user's `headers`/`params` and the defaults untouched.
+- [x] Malformed response → clear error instead of an empty DataFrame.
+- [x] Response with `values: []` → empty DataFrame with the expected columns.
+
+**Done when:** tests pass and `esios_get_indicator(token, "p_pmd", ...)` returns 6 geos for 2025-01-01.
+✅ Completed 2026-11-10: 39 tests pass; verified against the real API (1 h of `p_pmd` → 6 geos × 5 rows).
+Note: format errors raise `ValueError` for now; in Phase 2 they become `EsiosSchemaError` (a `ValueError` subclass to keep compatibility).
+
+---
+
+## Phase 1.1 — Findings from the API documentation · v1.1.1
+
+Goal: fix what the review of the official documentation (2026-11-10) uncovered.
+
+- [x] Verify against the real API whether `time_trunc` splits periods at block boundaries → **confirmed** (2025-07-01: 123.3 instead of 111.2).
+- [x] **Non-overlapping** blocks (each ends 1 s before the next) with boundaries on month starts in Madrid time.
+- [x] With `time_trunc=year`, 12-month blocks aligned to January 1st in Madrid (verified: the API accepts a full year in one request).
+- [x] `esios_get_archive` accepts the `download_json` response as a flat list of rows (format of the official example).
+- [x] Declare `tzdata` (required by `zoneinfo` on Windows).
 
 **Tests:**
-- [x] Fronteras de bloque exactas (verano 22:00Z / invierno 23:00Z), sin huecos ni solapes en rangos arbitrarios.
-- [x] Simulador de `time_trunc=day` + `average`: el resultado troceado coincide con el de una sola petición (falla con el troceo antiguo).
-- [x] `time_trunc=year` → bloques anuales; `start == end` → un bloque.
-- [x] La deduplicación sigue funcionando si la API repitiera un instante.
-- [x] `geo_agg`: filas con `geo_ids` (lista) en vez de `geo_id`.
-- [x] `download_json` con lista plana / lista vacía / filas que no son objetos.
+- [x] Exact block boundaries (summer 22:00Z / winter 23:00Z), no gaps or overlaps on arbitrary ranges.
+- [x] `time_trunc=day` + `average` simulator: the split result matches a single request (fails with the old splitting).
+- [x] `time_trunc=year` → yearly blocks; `start == end` → one block.
+- [x] Deduplication still works if the API repeated an instant.
+- [x] `geo_agg`: rows with `geo_ids` (list) instead of `geo_id`.
+- [x] `download_json` with a flat list / empty list / rows that are not objects.
 
-✅ Completada 2026-11-10: 51 tests pasan; comprobado contra la API real (`p_pmd` España, `day`+`average`, 01/01–02/07/2025 → 183 días, 01/07 = 111,201 como en una petición única).
-
----
-
-## Fase 2 — Robustez de red · v1.2.0
-
-Objetivo: que una descarga larga no falle por un error puntual.
-
-- [ ] Reintentos con backoff mediante `HTTPAdapter(max_retries=Retry(...))` para 429/500/502/503/504, respetando `Retry-After`.
-- [ ] Excepciones propias en `esios_request/exceptions.py`: `EsiosError`, `EsiosAuthError` (401/403), `EsiosNotFound` (404), `EsiosRateLimited` (429), `EsiosSchemaError`.
-- [ ] `logging` con logger `esios_request` (bloque pedido, reintentos, tiempos) en lugar de `print`.
-- [ ] Token opcional: si no se pasa, leer la variable de entorno `ESIOS_API_KEY`.
-- [ ] Fechas flexibles: aceptar `str` (ISO 8601 y el formato actual), `datetime`, `date` y `pd.Timestamp`; validar `start < end`; documentar cómo se tratan las fechas sin zona horaria.
-- [ ] Normalizar tipos de salida: `value: float64`, `geo_id: Int64`, índice `datetime64[ns, UTC]`.
-
-**Hecho cuando:** un test simula un 503 seguido de 200 y la llamada termina bien; un 401 lanza `EsiosAuthError`.
+✅ Completed 2026-11-10: 51 tests pass; verified against the real API (`p_pmd` Spain, `day`+`average`, 2025-01-01 to 2025-07-02 → 183 days, 07-01 = 111.201 as in a single request).
 
 ---
 
-## Fase 3 — Cliente y rendimiento · v1.3.0
+## Phase 2 — Network robustness · v1.2.0
 
-Objetivo: base escalable sin romper la API actual.
+Goal: a long download must not fail because of a one-off error.
 
-- [ ] Clase `EsiosClient` con sesión reutilizable, reintentos y token configurados una sola vez; soporta `with`.
+- [x] Retries with backoff via `HTTPAdapter(max_retries=Retry(...))` for 429/500/502/503/504, honouring `Retry-After` (5 retries, GET only, also on the cached session).
+- [x] Custom exceptions in `esios_request/exceptions.py`: `EsiosError`, `EsiosAuthError` (401/403), `EsiosNotFound` (404), `EsiosRateLimited` (429), `EsiosSchemaError`, plus `EsiosHTTPError` (other HTTP errors) and `EsiosConfigError` (invalid input). They inherit from `requests.HTTPError`/`ValueError` so v1.1 code keeps working.
+- [x] `logging` with the `esios_request` logger (INFO per call, DEBUG per block with rows and timing; `NullHandler` by default; never the token).
+- [x] Optional token: if not given, read the `ESIOS_API_KEY` environment variable.
+- [x] Flexible dates: `str` (ISO 8601 and the current format), `datetime`, `date` and `pd.Timestamp`; validate `start <= end`; **no time zone = Madrid time** (documented in the README).
+- [x] Normalised output types: `value: float64`, `geo_id: Int64`, index `datetime64[ns, UTC]` (also with pandas 3, which defaults to µs).
+
+**Done when:** a test simulates a 503 followed by a 200 and the call succeeds; a 401 raises `EsiosAuthError`.
+✅ Completed 2026-11-10: 95 tests pass (44 new in `tests/test_phase2.py`), ruff and mypy clean. Verified against the real API: token from the environment + naive dates → 6 geos × 5 rows with normalised types; fake token → 403 → `EsiosAuthError` without retries.
+
+---
+
+## Phase 3 — Client and performance · v1.3.0
+
+Goal: a scalable base without breaking the current API.
+
+- [ ] `EsiosClient` class with a reusable session, retries and token configured once; supports `with`.
   - `client.indicator(id, start, end, **params) -> pd.DataFrame`
   - `client.indicators([ids], start, end, wide=False) -> pd.DataFrame`
   - `client.archive(id, **params) -> pd.DataFrame`
-  - `client.indicator_info(id) -> pd.DataFrame` (metadatos con `values=false`: nombre, unidad, geos, `step_type`…)
+  - `client.indicator_info(id) -> pd.DataFrame` (metadata with `values=false`: name, unit, geos, `step_type`…)
   - `client.search(text) -> pd.DataFrame` (`GET /indicators?text=`: id, name, short_name)
-- [ ] `esios_get_indicator` / `esios_get_archive` se mantienen como envoltorios finos del cliente (compatibilidad hacia atrás).
-- [ ] Descarga de bloques en paralelo con `ThreadPoolExecutor` (`max_workers` configurable, 4 por defecto) y tamaño de bloque configurable.
-- [ ] Catálogo de alias como `Enum`/dataclass (id, unidad, descripción) y error claro si el alias no existe.
+- [ ] `esios_get_indicator` / `esios_get_archive` remain as thin wrappers around the client (backward compatibility).
+- [ ] Parallel block download with `ThreadPoolExecutor` (configurable `max_workers`, 4 by default) and configurable block size.
+- [ ] Alias catalogue as an `Enum`/dataclass (id, unit, description) and a clear error if the alias does not exist.
 
-**Hecho cuando:** descargar un año de `p_pmd` es claramente más rápido que en v1.0.3 y el código antiguo sigue funcionando sin cambios.
-
----
-
-## Fase 4 — Caché inteligente · v1.4.0
-
-Objetivo: no repetir descargas y no servir datos obsoletos.
-
-- [ ] Sesión con caché creada de forma perezosa (no al importar).
-- [ ] Ruta de caché configurable y persistente (no en temp por defecto).
-- [ ] Caducidad por bloque: bloques completamente en el pasado sin caducidad; bloques que incluyen hoy o futuro, 5–15 min.
-- [ ] Función para limpiar la caché.
-
-**Hecho cuando:** repetir una descarga histórica no hace peticiones de red y pedir el día en curso siempre trae datos recientes.
+**Done when:** downloading a year of `p_pmd` is clearly faster than in v1.0.3 and old code keeps working unchanged.
 
 ---
 
-## Fuera de este horizonte (a valorar después)
+## Phase 4 — Smart cache · v1.4.0
 
-- Almacén local en Parquet con descarga incremental (la salida sigue siendo un DataFrame).
-- CI en GitHub Actions (ruff, mypy, pytest) y publicación en PyPI.
-- Cliente asíncrono (`httpx`).
+Goal: do not repeat downloads and do not serve stale data.
+
+- [ ] Cached session created lazily (not at import time).
+- [ ] Configurable, persistent cache path (not in temp by default).
+- [ ] Per-block expiry: blocks entirely in the past never expire; blocks including today or the future, 5–15 min.
+- [ ] Function to clear the cache.
+
+**Done when:** repeating a historical download makes no network requests and requesting the current day always returns fresh data.
+
+---
+
+## Beyond this horizon (to consider later)
+
+- Local Parquet store with incremental download (the output is still a DataFrame).
+- CI on GitHub Actions (ruff, mypy, pytest) and publishing to PyPI.
+- Async client (`httpx`).

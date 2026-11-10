@@ -8,28 +8,28 @@ from esios_request.indicators import (
 )
 
 
-def test_alias_de_indicador_se_traduce_a_id():
+def test_indicator_alias_is_translated_to_id():
     assert common_indicators("p_pmd") == 600
 
 
-def test_id_numerico_de_indicador_se_devuelve_igual():
+def test_numeric_indicator_id_is_returned_unchanged():
     assert common_indicators(600) == 600
 
 
-def test_alias_de_archivo_se_traduce_a_id():
+def test_archive_alias_is_translated_to_id():
     assert common_archives("uf") == 110
 
 
-def test_id_numerico_de_archivo_se_devuelve_igual():
+def test_numeric_archive_id_is_returned_unchanged():
     assert common_archives(110) == 110
 
 
-def test_alias_desconocido_lanza_keyerror():
+def test_unknown_alias_raises_keyerror():
     with pytest.raises(KeyError):
-        common_indicators("no_existe")
+        common_indicators("does_not_exist")
 
 
-@pytest.mark.parametrize("catalogo", [indicators, archives])
-def test_catalogos_sin_ids_repetidos(catalogo):
-    ids = list(catalogo.values())
+@pytest.mark.parametrize("catalogue", [indicators, archives])
+def test_catalogues_have_no_repeated_ids(catalogue):
+    ids = list(catalogue.values())
     assert len(ids) == len(set(ids))

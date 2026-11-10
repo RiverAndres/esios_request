@@ -9,7 +9,7 @@ from .conftest import archive_url
 PAYLOAD = {"UF": [{"codigo": "UF1", "nombre": "Uno"}, {"codigo": "UF2", "nombre": "Dos"}]}
 
 
-def test_devuelve_dataframe_con_la_primera_clave(mocked, token):
+def test_returns_dataframe_from_first_key(mocked, token):
     mocked.add("GET", archive_url(110), json=PAYLOAD)
 
     df = esios_get_archive(token, 110)
@@ -19,7 +19,7 @@ def test_devuelve_dataframe_con_la_primera_clave(mocked, token):
     assert len(df) == 2
 
 
-def test_alias_de_archivo(mocked, token):
+def test_archive_alias(mocked, token):
     mocked.add("GET", archive_url(110), json=PAYLOAD)
 
     esios_get_archive(token, "uf")
@@ -28,14 +28,14 @@ def test_alias_de_archivo(mocked, token):
     assert mocked.calls[0].request.headers["x-api-key"] == token
 
 
-def test_error_http_se_propaga(mocked, token):
+def test_http_error_is_propagated(mocked, token):
     mocked.add("GET", archive_url(110), status=404, json={"message": "not found"})
 
     with pytest.raises(requests.HTTPError):
         esios_get_archive(token, 110)
 
 
-def test_params_y_headers_del_usuario_no_se_modifican(mocked, token):
+def test_user_params_and_headers_are_not_modified(mocked, token):
     mocked.add("GET", archive_url(110), json=PAYLOAD)
     params = {"date": "2025-01-01"}
     headers = {"Accept": "application/json"}
@@ -48,16 +48,16 @@ def test_params_y_headers_del_usuario_no_se_modifican(mocked, token):
 
 
 @pytest.mark.parametrize(
-    "body", ["{}", '"texto"', "42", "[1, 2]", '{"UF": [1, 2]}', "<html>error</html>"]
+    "body", ["{}", '"text"', "42", "[1, 2]", '{"UF": [1, 2]}', "<html>error</html>"]
 )
-def test_respuesta_mal_formada_lanza_error(mocked, token, body):
+def test_malformed_response_raises_error(mocked, token, body):
     mocked.add("GET", archive_url(110), body=body)
 
     with pytest.raises(ValueError):
         esios_get_archive(token, 110)
 
 
-def test_lista_vacia_devuelve_dataframe_vacio(mocked, token):
+def test_empty_list_returns_empty_dataframe(mocked, token):
     mocked.add("GET", archive_url(110), json={"UF": []})
 
     df = esios_get_archive(token, 110)
@@ -66,13 +66,13 @@ def test_lista_vacia_devuelve_dataframe_vacio(mocked, token):
     assert df.empty
 
 
-def test_lista_plana_de_filas_devuelve_dataframe(mocked, token):
-    # Formato del ejemplo de la documentación oficial de download_json.
-    filas = [
+def test_flat_list_of_rows_returns_dataframe(mocked, token):
+    # Format of the official download_json documentation example (the API returns Spanish labels).
+    rows = [
         {"Indicadores": "Precio", "31/03/2014": "0,119941"},
         {"Indicadores": "Energía", "31/03/2014": "1,5"},
     ]
-    mocked.add("GET", archive_url(110), json=filas)
+    mocked.add("GET", archive_url(110), json=rows)
 
     df = esios_get_archive(token, 110)
 
@@ -80,7 +80,7 @@ def test_lista_plana_de_filas_devuelve_dataframe(mocked, token):
     assert list(df["Indicadores"]) == ["Precio", "Energía"]
 
 
-def test_lista_plana_vacia_devuelve_dataframe_vacio(mocked, token):
+def test_empty_flat_list_returns_empty_dataframe(mocked, token):
     mocked.add("GET", archive_url(110), json=[])
 
     df = esios_get_archive(token, 110)

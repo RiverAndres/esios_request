@@ -332,8 +332,8 @@ def test_logging_records_blocks_without_the_token(mocked, token, caplog):
         esios_get_indicator(token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2026/03/01T00:00:00Z"})
 
     messages = [r.getMessage() for r in caplog.records if r.name == "esios_request"]
-    assert any("3 block(s)" in m for m in messages)
-    assert sum("block" in m and "rows" in m for m in messages) == 3
+    assert any("15 block(s)" in m for m in messages)  # January 2025 to March 2026, one block per month
+    assert sum("block" in m and "rows" in m for m in messages) == 15
     assert all(token not in m for m in messages)
 
 

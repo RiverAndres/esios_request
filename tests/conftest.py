@@ -67,6 +67,18 @@ def boundary_callback(indicator_id: int, geos: list[tuple[int, str]] | None = No
     return _cb
 
 
+@pytest.fixture(autouse=True)
+def isolated_cache(tmp_path, monkeypatch):
+    """Point the response cache to a temporary directory so no test touches the user's real cache."""
+    from esios_request import req_cache
+
+    cache_dir = tmp_path / "esios_cache"
+    monkeypatch.setenv(req_cache.CACHE_DIR_ENV_VAR, str(cache_dir))
+    req_cache._close_sessions()
+    yield cache_dir
+    req_cache._close_sessions()
+
+
 @pytest.fixture
 def token() -> str:
     return FAKE_TOKEN

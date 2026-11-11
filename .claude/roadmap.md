@@ -2,6 +2,7 @@
 
 > Fixed constraint: the library's public output is always a `pandas.DataFrame`.
 > Starting point: v1.0.3 (November 2026). Bugs verified against the real API on 2026-11-09.
+> All phases (v1.0.4 → v1.4.0) are completed as of 2026-11-11.
 
 ---
 
@@ -108,12 +109,22 @@ Goal: a scalable base without breaking the current API.
 
 Goal: do not repeat downloads and do not serve stale data.
 
-- [ ] Cached session created lazily (not at import time).
-- [ ] Configurable, persistent cache path (not in temp by default).
-- [ ] Per-block expiry: blocks entirely in the past never expire; blocks including today or the future, 5–15 min.
-- [ ] Function to clear the cache.
+Author's criterion (2026-11-11): the cache follows the structure of the library (the request blocks), not
+the nature of the data. Its purpose is to save the client time and the server traffic; it does not defend
+against REE correcting already published data.
+
+- [x] Cached session created lazily (not at import time); one shared session per cache directory.
+- [x] Configurable, persistent cache directory: `cache_dir` argument → `ESIOS_CACHE_DIR` → user's cache directory (`platformdirs`).
+- [x] Per-request expiry: a window that ends before now never expires; one that ends now or later is kept `cache_recent_ttl` seconds (600 by default, `0` = do not cache). Metadata 24 h; archives `cache_recent_ttl`.
+- [x] Whole calendar blocks with the cache: a closed block is requested whole and trimmed locally, so different ranges share it. Not for calls that aggregate (`time_trunc`, `time_agg`, `geo_agg`, `geo_trunc`) nor for the open block: exact dates.
+- [x] `clear_cache(cache_dir=None, expired_only=False)` and `EsiosClient.clear_cache()`.
+- [x] Default `block_months` 6 → 1, also without cache (author's decision, 2026-11-11, after the benchmark below).
+- [x] The token is no longer forwarded when the API redirects a large response to its temporary S3 file: the library's sessions (`EsiosSession`, `EsiosCachedSession`) drop `x-api-key` on a redirect to another host. A user-provided `session` is not covered.
 
 **Done when:** repeating a historical download makes no network requests and requesting the current day always returns fresh data.
+✅ Completed 2026-11-11: 174 tests pass (30 new in `tests/test_phase4.py`; 9 existing ones adapted to 1-month blocks), ruff clean, mypy clean with `--ignore-missing-imports`. Redirect fix verified against the real API: the S3 file downloads without the token (200, 4.24 MB, 17 668 rows), also through the cached session. Real API: two years of `p_pmd` (Spain, 65 688 rows, identical results) in 24 one-month blocks 7.9 s vs 4 six-month blocks 13.1 s, no 429 or retries. With the cache: 1 h of October 2026 downloads the whole month once (2.3 s), then that call and any other range in October take 0.01 s; a range ending today expires after 10 min.
+
+Known limitation: a closed window is cached forever, so values the API publishes later than the end of the window (indicators published with a delay) are not picked up until `clear_cache()`.
 
 ---
 
@@ -122,4 +133,5 @@ Goal: do not repeat downloads and do not serve stale data.
 - Local Parquet store with incremental download (the output is still a DataFrame).
 - CI on GitHub Actions (ruff, mypy, pytest) and publishing to PyPI.
 - Async client (`httpx`).
-- Reconsider the default `block_months` (6 → 3): ~3x faster per download but twice the requests. Kept at 6 for now to limit the number of requests (author's decision, 2026-11-10).
+- ~~Reconsider the default `block_months`~~ → changed to 1 in v1.4.0.
+- Cache size limit or automatic clean-up: responses that never expire accumulate in the sqlite file.

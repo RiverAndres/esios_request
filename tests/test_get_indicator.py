@@ -77,20 +77,21 @@ def test_extra_params_are_forwarded(mocked, token):
     assert query_params(mocked.calls[0].request)["time_trunc"] == "hour"
 
 
-def test_long_range_is_split_into_6_month_blocks_aligned_to_madrid(mocked, token):
+def test_long_range_is_split_into_1_month_blocks_aligned_to_madrid(mocked, token):
     mocked.add_callback("GET", indicator_url(600), callback=boundary_callback(600))
 
     esios_get_indicator(
-        token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2026/03/01T00:00:00Z"}
+        token, 600, params={"start_date": "2025/02/15T00:00:00Z", "end_date": "2025/05/10T00:00:00Z"}
     )
 
     blocks = sent_blocks(mocked)
-    # Boundaries = July 1st and January 1st at 00:00 Madrid time (22:00Z in summer, 23:00Z in winter).
+    # Boundaries = the 1st of each month at 00:00 Madrid time (23:00Z in winter, 22:00Z in summer).
     # Each block ends 1 s before the boundary: end_date is inclusive, so blocks do not overlap.
     assert blocks == [
-        ("2025/01/01T00:00:00Z", "2025/06/30T21:59:59Z"),
-        ("2025/06/30T22:00:00Z", "2025/12/31T22:59:59Z"),
-        ("2025/12/31T23:00:00Z", "2026/03/01T00:00:00Z"),
+        ("2025/02/15T00:00:00Z", "2025/02/28T22:59:59Z"),
+        ("2025/02/28T23:00:00Z", "2025/03/31T21:59:59Z"),
+        ("2025/03/31T22:00:00Z", "2025/04/30T21:59:59Z"),
+        ("2025/04/30T22:00:00Z", "2025/05/10T00:00:00Z"),
     ]
 
 
@@ -110,7 +111,7 @@ def test_consecutive_blocks_have_no_gaps_or_overlaps(mocked, token):
         assert (boundary.day, boundary.hour, boundary.minute) == (1, 0, 0)
     for start, end in blocks:
         assert start <= end
-        assert end - start <= timedelta(days=185)
+        assert end - start <= timedelta(days=31, hours=1)  # one month (+1 h when DST ends)
 
 
 def test_time_trunc_day_does_not_split_days_between_blocks(mocked, token):
@@ -123,7 +124,7 @@ def test_time_trunc_day_does_not_split_days_between_blocks(mocked, token):
 
     expected = pd.DataFrame(daily_average(datetime(2024, 12, 31, 23), datetime(2026, 2, 28, 22, 59, 59)))
     expected = expected.set_index(pd.to_datetime(expected["datetime_utc"], utc=True))["value"]
-    assert len(mocked.calls) == 3
+    assert len(mocked.calls) == 14  # January 2025 to February 2026, one block per month
     assert not df.index.duplicated().any()
     pd.testing.assert_series_equal(df["value"], expected, check_names=False, check_index_type=False)
 
@@ -163,21 +164,22 @@ def test_no_duplicates_between_blocks(mocked, token):
     )
 
     assert not df.index.duplicated().any()
-    assert len(df) == 6  # start and end of each of the 3 blocks
+    assert len(mocked.calls) == 15  # January 2025 to March 2026, one block per month
+    assert len(df) == 30  # start and end of each of the 15 blocks
     assert df.index.is_monotonic_increasing
 
 
 def test_dedupes_if_the_api_repeats_an_instant_between_blocks(mocked, token):
     # Safety net: even though blocks do not overlap, if the API returned the same instant
     # in two blocks it must not appear twice.
-    repeated = make_value(datetime(2025, 6, 30, 22), 1.0)
+    repeated = make_value(datetime(2025, 1, 31, 23), 1.0)
     mocked.add_callback("GET", indicator_url(600), callback=payload_by_start(600, {
         "2025/01/01T00:00:00Z": [make_value(datetime(2025, 1, 1), 0.0), repeated],
-        "2025/06/30T22:00:00Z": [repeated, make_value(datetime(2025, 9, 1), 2.0)],
+        "2025/01/31T23:00:00Z": [repeated, make_value(datetime(2025, 2, 15), 2.0)],
     }))
 
     df = esios_get_indicator(
-        token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/09/01T00:00:00Z"}
+        token, 600, params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/02/15T00:00:00Z"}
     )
 
     assert len(mocked.calls) == 2
@@ -226,8 +228,8 @@ def test_several_geos_and_several_blocks_without_duplicates(mocked, token):
 
     keys = list(zip(df.index, df["geo_id"]))
     assert len(keys) == len(set(keys))
-    assert len(df) == 6 * len(GEOS_600)  # 6 distinct instants x 3 geos
-    assert df.groupby("geo_id").size().to_dict() == {1: 6, 2: 6, 3: 6}
+    assert len(df) == 30 * len(GEOS_600)  # 30 distinct instants (15 blocks) x 3 geos
+    assert df.groupby("geo_id").size().to_dict() == {1: 30, 2: 30, 3: 30}
 
 
 def test_user_params_are_not_modified(mocked, token):
@@ -307,7 +309,7 @@ def test_geo_ids_filter_is_forwarded_in_every_block(mocked, token):
 
     esios_get_indicator(token, 600, params={**LONG_RANGE, "geo_ids[]": [3, 1]})
 
-    assert len(mocked.calls) == 3
+    assert len(mocked.calls) == 15
     for call in mocked.calls:
         qs = parse_qs(urlparse(call.request.url).query)
         assert qs["geo_ids[]"] == ["3", "1"]
@@ -321,12 +323,12 @@ def test_geo_agg_rows_with_geo_ids_instead_of_geo_id(mocked, token):
 
     mocked.add_callback("GET", indicator_url(600), callback=payload_by_start(600, {
         "2025/01/01T00:00:00Z": [row(datetime(2025, 1, 1), 1.0)],
-        "2025/06/30T22:00:00Z": [row(datetime(2025, 9, 1), 2.0)],
+        "2025/01/31T23:00:00Z": [row(datetime(2025, 2, 15), 2.0)],
     }))
 
     df = esios_get_indicator(
         token, 600,
-        params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/09/01T00:00:00Z", "geo_agg": "sum"},
+        params={"start_date": "2025/01/01T00:00:00Z", "end_date": "2025/02/15T00:00:00Z", "geo_agg": "sum"},
     )
 
     assert list(df["value"]) == [1.0, 2.0]

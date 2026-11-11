@@ -325,7 +325,7 @@ def test_indicators_split_each_indicator_into_blocks(mocked, token):
         "2025/06/30T22:00:00Z": [make_value(datetime(2025, 7, 1), 20.0)],
     }))
 
-    with EsiosClient(token, max_workers=4) as client:
+    with EsiosClient(token, max_workers=4, block_months=6) as client:
         df = client.indicators([600, 602], *YEAR)
 
     assert len(mocked.calls) == 4

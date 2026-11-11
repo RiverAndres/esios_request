@@ -44,7 +44,8 @@ def esios_get_indicator(
       (ISO 8601 or "%Y/%m/%dT%H:%M:%SZ"), ``datetime``, ``date`` or ``pd.Timestamp``; dates without
       time zone are interpreted in Europe/Madrid time. ``end_date`` is inclusive. It is not modified.
     - ``headers``: dict --> By default contains "Accept", "Content-Type", & "User-Agent". It is not modified.
-    - ``use_cache``: bool --> By default "False". Uses the module requests_cache to store the request and avoid doing the same GET request.
+    - ``use_cache``: bool --> By default "False". Keeps the responses on disk to avoid repeating downloads
+      (see ``EsiosClient`` for the cache directory and expiry).
 
     Returns
     -----
